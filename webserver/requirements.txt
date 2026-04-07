@@ -1,2 +1,9 @@
-Flask
-Flask-MySQLdb
+flask
+flask-injector
+flask-sqlalchemy
+injector
+pymysql
+python-dotenv
+PyJWT
+cryptography
+pytest

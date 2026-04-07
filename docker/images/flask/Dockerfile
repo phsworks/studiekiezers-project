@@ -8,4 +8,4 @@ RUN apk add --no-cache pkgconfig gcc python3-dev musl-dev mariadb-dev
 
 RUN pip install -r requirements.txt
 
-CMD [ "python3", "-u", "app.py" ]
+CMD [ "python3", "-u", "run.py" ]
