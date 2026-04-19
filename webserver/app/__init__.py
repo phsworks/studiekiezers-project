@@ -17,8 +17,12 @@ def create_app(config='app.config.DevConfig', injector_modules=None):
 
     from .users.routes import users_bp
     from .auth.routes import auth_bp
+    from .auth.routes import groups_bp
+
+
     app.register_blueprint(users_bp, url_prefix='/users')
     app.register_blueprint(auth_bp, url_prefix='/auth')
+    app.register_blueprint(auth_bp, url_prefix='/groups')
 
     @app.errorhandler(403)
     def forbidden(e):
