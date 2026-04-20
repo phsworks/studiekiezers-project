@@ -7,25 +7,52 @@ const char* password = "***REMOVED***";
 
 #define DRIVE_A  4
 #define DRIVE_B  5
-
 #define STEER_A  6
 #define STEER_B  7
+
+#define TRIG_FRONT 16
+#define ECHO_FRONT 18
+#define TRIG_BACK  17
+#define ECHO_BACK  19
+#define SAFE_DISTANCE 20.0
 
 WebServer server(80);
 
 String driveState = "stop";
 String steerState = "center";
 
+float getDistance(int trig, int echo) {
+  digitalWrite(trig, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trig, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+  long duration = pulseIn(echo, HIGH, 30000);
+  return duration * 0.034 / 2;
+}
+
 void driveForward() {
-  digitalWrite(DRIVE_A, HIGH);
-  digitalWrite(DRIVE_B, LOW);
-  driveState = "forward";
+  float distance = getDistance(TRIG_FRONT, ECHO_FRONT);
+  if (distance > SAFE_DISTANCE || distance == 0) {
+    digitalWrite(DRIVE_A, HIGH);
+    digitalWrite(DRIVE_B, LOW);
+    driveState = "forward";
+  } else {
+    driveStop();
+    Serial.println("GEBLOKKEERD voor: " + String(distance) + "cm");
+  }
 }
 
 void driveBackward() {
-  digitalWrite(DRIVE_A, LOW);
-  digitalWrite(DRIVE_B, HIGH);
-  driveState = "backward";
+  float distance = getDistance(TRIG_BACK, ECHO_BACK);
+  if (distance > SAFE_DISTANCE || distance == 0) {
+    digitalWrite(DRIVE_A, LOW);
+    digitalWrite(DRIVE_B, HIGH);
+    driveState = "backward";
+  } else {
+    driveStop();
+    Serial.println("GEBLOKKEERD achter: " + String(distance) + "cm");
+  }
 }
 
 void driveStop() {
@@ -82,7 +109,9 @@ void handleDrive() {
 
 void handleStatus() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
-  String json = "{\"drive\":\"" + driveState + "\",\"steer\":\"" + steerState + "\",\"ip\":\"" + WiFi.localIP().toString() + "\"}";
+  float distFront = getDistance(TRIG_FRONT, ECHO_FRONT);
+  float distBack = getDistance(TRIG_BACK, ECHO_BACK);
+  String json = "{\"drive\":\"" + driveState + "\",\"steer\":\"" + steerState + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"distance_front\":" + String(distFront) + ",\"distance_back\":" + String(distBack) + "}";
   server.send(200, "application/json", json);
 }
 
@@ -113,6 +142,11 @@ void setup() {
   pinMode(DRIVE_B, OUTPUT);
   pinMode(STEER_A, OUTPUT);
   pinMode(STEER_B, OUTPUT);
+  pinMode(TRIG_FRONT, OUTPUT);
+  pinMode(ECHO_FRONT, INPUT);
+  pinMode(TRIG_BACK, OUTPUT);
+  pinMode(ECHO_BACK, INPUT);
+
   driveStop();
   steerCenter();
 
@@ -126,13 +160,8 @@ void setup() {
   Serial.println("Connected!");
   Serial.print("Your API is at: http://");
   Serial.println(WiFi.localIP());
-  Serial.println();
-  Serial.println("Try these commands:");
-  Serial.print("  http://"); Serial.print(WiFi.localIP()); Serial.println("/drive?cmd=forward");
-  Serial.print("  http://"); Serial.print(WiFi.localIP()); Serial.println("/drive?cmd=stop");
-  Serial.print("  http://"); Serial.print(WiFi.localIP()); Serial.println("/drive?cmd=left");
 
-  server.on("/",      handleRoot);
+  server.on("/", handleRoot);
   server.on("/drive", handleDrive);
   server.on("/status", handleStatus);
   server.begin();
