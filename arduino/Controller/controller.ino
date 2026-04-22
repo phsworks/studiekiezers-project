@@ -1,25 +1,19 @@
-#include <WiFi.h>
-#include <WebServer.h>
-#include <ArduinoJson.h>
+#include <Bluepad32.h>
 
-const char* ssid     = "Michiel de Router";
-const char* password = "***REMOVED***";
-
-#define DRIVE_A  4
-#define DRIVE_B  5
-#define STEER_A  6
-#define STEER_B  7
+#define DRIVE_A  5
+#define DRIVE_B  4
+#define STEER_A  21
+#define STEER_B  22
 
 #define TRIG_FRONT 16
 #define ECHO_FRONT 18
 #define TRIG_BACK  17
 #define ECHO_BACK  19
-#define SAFE_DISTANCE 30.0
+#define SAFE_DISTANCE 50.0
 
-WebServer server(80);
+#define BUZZER 25
 
-String driveState = "stop";
-String steerState = "center";
+ControllerPtr myControllers[BP32_MAX_GAMEPADS];
 
 float getDistance(int trig, int echo) {
   digitalWrite(trig, LOW);
@@ -34,93 +28,113 @@ float getDistance(int trig, int echo) {
 void driveForward() {
   digitalWrite(DRIVE_A, HIGH);
   digitalWrite(DRIVE_B, LOW);
-  driveState = "forward";
 }
 
 void driveBackward() {
   digitalWrite(DRIVE_A, LOW);
   digitalWrite(DRIVE_B, HIGH);
-  driveState = "backward";
 }
 
 void driveStop() {
   digitalWrite(DRIVE_A, LOW);
   digitalWrite(DRIVE_B, LOW);
-  driveState = "stop";
 }
 
 void steerLeft() {
   digitalWrite(STEER_A, HIGH);
   digitalWrite(STEER_B, LOW);
-  steerState = "left";
 }
 
 void steerRight() {
   digitalWrite(STEER_A, LOW);
   digitalWrite(STEER_B, HIGH);
-  steerState = "right";
 }
 
 void steerCenter() {
   digitalWrite(STEER_A, LOW);
   digitalWrite(STEER_B, LOW);
-  steerState = "center";
 }
 
-void handleDrive() {
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+void onConnectedController(ControllerPtr ctl) {
+  Serial.println("Controller verbonden!");
+  for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
+    if (myControllers[i] == nullptr) {
+      myControllers[i] = ctl;
+      break;
+    }
+  }
+}
 
-  if (!server.hasArg("cmd")) {
-    server.send(400, "application/json", "{\"error\":\"missing cmd parameter\"}");
-    return;
+void onDisconnectedController(ControllerPtr ctl) {
+  Serial.println("Controller losgekoppeld!");
+  driveStop();
+  steerCenter();
+  noTone(BUZZER);
+  for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
+    if (myControllers[i] == ctl) {
+      myControllers[i] = nullptr;
+      break;
+    }
+  }
+}
+
+void processController(ControllerPtr ctl) {
+  if (!ctl->isConnected() || !ctl->hasData()) return;
+
+  int throttle = ctl->throttle();
+  int brake = ctl->brake();
+  bool noodstop = false;
+
+  if (throttle > 50) {
+    float distance = getDistance(TRIG_FRONT, ECHO_FRONT);
+    if (distance > 0 && distance < 50.0) {
+      driveStop();
+      noodstop = true;
+      ctl->playDualRumble(0, 500, 0xff, 0xff);
+      Serial.println("NOODSTOP voor: " + String(distance) + "cm");
+    } else {
+      driveForward();
+      Serial.println("Vooruit");
+    }
+  } else if (brake > 50) {
+    float distance = getDistance(TRIG_BACK, ECHO_BACK);
+    if (distance > 0 && distance < 50.0) {
+      driveStop();
+      noodstop = true;
+      ctl->playDualRumble(0, 500, 0xff, 0xff);
+      Serial.println("NOODSTOP achter: " + String(distance) + "cm");
+    } else {
+      driveBackward();
+      Serial.println("Achteruit");
+    }
+  } else {
+    driveStop();
   }
 
-  String cmd = server.arg("cmd");
-  cmd.toLowerCase();
-
-  if      (cmd == "forward")  driveForward();
-  else if (cmd == "backward") driveBackward();
-  else if (cmd == "stop")     driveStop();
-  else if (cmd == "left")     steerLeft();
-  else if (cmd == "right")    steerRight();
-  else if (cmd == "center")   steerCenter();
-  else {
-    server.send(400, "application/json", "{\"error\":\"unknown command\"}");
-    return;
+  if (ctl->a() && !noodstop) {
+    tone(BUZZER, 1000);
+    ctl->setColorLED(255, 165, 0);
+    Serial.println("TOETER!");
+  } else if (noodstop) {
+    noTone(BUZZER);
+    ctl->setColorLED(255, 0, 0);
+  } else {
+    noTone(BUZZER);
+    if (throttle > 50 || brake > 50) {
+      ctl->setColorLED(0, 255, 0);
+    } else {
+      ctl->setColorLED(0, 0, 255);
+    }
   }
 
-  String json = "{\"ok\":true,\"cmd\":\"" + cmd + "\",\"drive\":\"" + driveState + "\",\"steer\":\"" + steerState + "\"}";
-  server.send(200, "application/json", json);
-  Serial.println("CMD: " + cmd);
-}
-
-void handleStatus() {
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  float distFront = getDistance(TRIG_FRONT, ECHO_FRONT);
-  float distBack = getDistance(TRIG_BACK, ECHO_BACK);
-  String json = "{\"drive\":\"" + driveState + "\",\"steer\":\"" + steerState + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"distance_front\":" + String(distFront) + ",\"distance_back\":" + String(distBack) + "}";
-  server.send(200, "application/json", json);
-}
-
-void handleRoot() {
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  String html = R"(
-    <html><body style='font-family:sans-serif;padding:20px;background:#111;color:#eee'>
-    <h2>🚗 RC Car API</h2>
-    <p>Send GET requests to control the car:</p>
-    <ul>
-      <li><a href='/drive?cmd=forward' style='color:#4ade80'>/drive?cmd=forward</a></li>
-      <li><a href='/drive?cmd=backward' style='color:#4ade80'>/drive?cmd=backward</a></li>
-      <li><a href='/drive?cmd=stop' style='color:#4ade80'>/drive?cmd=stop</a></li>
-      <li><a href='/drive?cmd=left' style='color:#4ade80'>/drive?cmd=left</a></li>
-      <li><a href='/drive?cmd=right' style='color:#4ade80'>/drive?cmd=right</a></li>
-      <li><a href='/drive?cmd=center' style='color:#4ade80'>/drive?cmd=center</a></li>
-      <li><a href='/status' style='color:#4ade80'>/status</a></li>
-    </ul>
-    </body></html>
-  )";
-  server.send(200, "text/html", html);
+  int axisX = ctl->axisX();
+  if (axisX < -50) {
+    steerLeft();
+  } else if (axisX > 50) {
+    steerRight();
+  } else {
+    steerCenter();
+  }
 }
 
 void setup() {
@@ -134,45 +148,26 @@ void setup() {
   pinMode(ECHO_FRONT, INPUT);
   pinMode(TRIG_BACK, OUTPUT);
   pinMode(ECHO_BACK, INPUT);
+  pinMode(BUZZER, OUTPUT);
 
   driveStop();
   steerCenter();
+  noTone(BUZZER);
 
-  Serial.print("Connecting to WiFi");
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println();
-  Serial.println("Connected!");
-  Serial.print("Your API is at: http://");
-  Serial.println(WiFi.localIP());
+  BP32.setup(&onConnectedController, &onDisconnectedController);
+  BP32.forgetBluetoothKeys();
 
-  server.on("/", handleRoot);
-  server.on("/drive", handleDrive);
-  server.on("/status", handleStatus);
-  server.begin();
-
-  Serial.println("API server started!");
+  Serial.println("Bluepad32 gestart, wacht op controller...");
 }
 
 void loop() {
-  server.handleClient();
+  BP32.update();
 
-  if (driveState == "forward") {
-    float distance = getDistance(TRIG_FRONT, ECHO_FRONT);
-    if (distance > 0 && distance < SAFE_DISTANCE) {
-      driveStop();
-      Serial.println("NOODSTOP voor: " + String(distance) + "cm");
+  for (auto ctl : myControllers) {
+    if (ctl && ctl->isConnected()) {
+      processController(ctl);
     }
   }
 
-  if (driveState == "backward") {
-    float distance = getDistance(TRIG_BACK, ECHO_BACK);
-    if (distance > 0 && distance < SAFE_DISTANCE) {
-      driveStop();
-      Serial.println("NOODSTOP achter: " + String(distance) + "cm");
-    }
-  }
+  delay(10);
 }
