@@ -9,7 +9,7 @@
 #define ECHO_FRONT 18
 #define TRIG_BACK  17
 #define ECHO_BACK  19
-#define SAFE_DISTANCE 50.0
+#define SAFE_DISTANCE 30.0
 
 #define BUZZER 25
 
@@ -87,7 +87,7 @@ void processController(ControllerPtr ctl) {
 
   if (throttle > 50) {
     float distance = getDistance(TRIG_FRONT, ECHO_FRONT);
-    if (distance > 0 && distance < 50.0) {
+    if (distance > 0 && distance < 30.0) {
       driveStop();
       noodstop = true;
       ctl->playDualRumble(0, 500, 0xff, 0xff);
@@ -98,7 +98,7 @@ void processController(ControllerPtr ctl) {
     }
   } else if (brake > 50) {
     float distance = getDistance(TRIG_BACK, ECHO_BACK);
-    if (distance > 0 && distance < 50.0) {
+    if (distance > 0 && distance < 30.0) {
       driveStop();
       noodstop = true;
       ctl->playDualRumble(0, 500, 0xff, 0xff);
@@ -111,6 +111,13 @@ void processController(ControllerPtr ctl) {
     driveStop();
   }
 
+  // L3 voor wielen recht
+  if (ctl->thumbL()) {
+    steerCenter();
+    Serial.println("Wielen recht");
+  }
+
+  // Toeter met kruisje
   if (ctl->a() && !noodstop) {
     tone(BUZZER, 1000);
     ctl->setColorLED(255, 165, 0);
@@ -127,13 +134,20 @@ void processController(ControllerPtr ctl) {
     }
   }
 
-  int axisX = ctl->axisX();
-  if (axisX < -50) {
-    steerLeft();
-  } else if (axisX > 50) {
-    steerRight();
-  } else {
-    steerCenter();
+  // Sturen met pulsen
+  if (!ctl->thumbL()) {
+    int axisX = ctl->axisX();
+    if (axisX < -200) {
+      steerLeft();
+      delay(50);
+      steerCenter();
+    } else if (axisX > 200) {
+      steerRight();
+      delay(50);
+      steerCenter();
+    } else {
+      steerCenter();
+    }
   }
 }
 
