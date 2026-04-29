@@ -134,17 +134,13 @@ void processController(ControllerPtr ctl) {
     }
   }
 
-  // Sturen met pulsen
+  // FIX: sturen zonder delay/puls, geen trilling meer
   if (!ctl->thumbL()) {
     int axisX = ctl->axisX();
     if (axisX < -200) {
       steerLeft();
-      delay(50);
-      steerCenter();
     } else if (axisX > 200) {
       steerRight();
-      delay(50);
-      steerCenter();
     } else {
       steerCenter();
     }
