@@ -1,9 +1,10 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
+#include "secrets.h" // WIFI_SSID / WIFI_PASSWORD, not in git: copy secrets.example.h
 
-const char* ssid     = "Michiel de Router";
-const char* password = "***REMOVED***";
+const char* ssid     = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
 
 #define DRIVE_A  4
 #define DRIVE_B  5

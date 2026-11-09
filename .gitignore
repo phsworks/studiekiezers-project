@@ -2,3 +2,4 @@
 docker/config/mariadb
 docker/config/phpmyadmin
 *.pyc
+arduino/**/secrets.h
